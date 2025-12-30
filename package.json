@@ -55,7 +55,7 @@
     "ejs": "^3.1.10",
     "express": "^4.21.2",
     "jsonrepair": "^3.13.1",
-    "jsonwebtoken": "^9.0.2",
+    "jsonwebtoken": "^9.0.3",
     "node-cron": "^3.0.3",
     "nodemon": "^3.1.9",
     "openai": "^4.86.2",
