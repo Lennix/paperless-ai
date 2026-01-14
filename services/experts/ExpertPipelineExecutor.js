@@ -2977,13 +2977,11 @@ async function processDocument(document, ollamaService, options = {}) {
         // Pre-check indicated model not available or immediate fallback
         const reason = classifyResult._meta.reason || 'model_not_available';
         const msg = `Router model unavailable: ${reason}`;
-        logger.error({
-            event: 'router_classification_failed',
+        logger.warn({
+            event: 'router_classification_fallback_to_general',
             reason: reason,
             documentId: document.id || document.filename
         });
-        throw new Error(msg);
-=======
 
         classificationResult = {
             classification: {
@@ -2997,35 +2995,9 @@ async function processDocument(document, ollamaService, options = {}) {
             },
             _meta: {
                 fallback: true,
-                reason: 'router_retries_exhausted',
-                attempts: maxRetries
+                reason: reason
             }
         };
-    } else if (classificationResult?._meta?.fallback) {
-    } else if (classificationResult?._meta?.fallback) {
-        // Pre-check indicated model not available or immediate fallback
-        logger.warn({
-            event: 'router_classification_fallback_to_general',
-            reason: classificationResult._meta.reason || 'model_not_available',
-            documentId: document.id || document.filename
-        });
-
-        classificationResult = {
-            classification: {
-                primary_domain: 'General',
-                document_type: 'unknown',
-                confidence: 0.1
-            },
-            routing: {
-                requires_visual_analysis: false,
-                requires_expert_model: false
-            },
-            _meta: {
-                fallback: true,
-                reason: classificationResult._meta.reason || 'model_not_available'
-            }
-        };
->>>>>>> efdd603f (feat: add visual signal analyzer for document normalization)
     } else {
         // classificationResult already set by router or pre-calc
         logger.info({
