@@ -804,6 +804,17 @@ app.get('/metrics', async (_req, res) => {
  */
 app.get('/health/database', async (req, res) => {
   try {
+    // Check if RAG features are enabled
+    const ragEnabled = process.env.RAG_ENABLED === 'yes';
+    if (!ragEnabled) {
+      return res.status(200).json({
+        status: 'disabled',
+        message: 'RAG features are disabled (RAG_ENABLED=no)',
+        database: { connected: false, reason: 'RAG_ENABLED=no' },
+        info: 'Set RAG_ENABLED=yes and configure Qdrant to enable RAG features'
+      });
+    }
+
     const cfg = require('./config/config');
     const { visualOverlayRepository } = require('./services/visual-rag/VisualOverlayRepository');
 
@@ -994,6 +1005,14 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 // Start server
 async function validateDatabaseConnection() {
+  // Skip database validation if RAG is disabled
+  const ragEnabled = process.env.RAG_ENABLED === 'yes';
+  if (!ragEnabled) {
+    console.log('[STARTUP] RAG_ENABLED=no, skipping vector database validation');
+    console.log('[STARTUP] AI tagging will work, but RAG chat features are disabled');
+    return true;
+  }
+
   const cfg = require('./config/config');
 
   console.log('[STARTUP] Validating database connection...');
@@ -1006,7 +1025,7 @@ async function validateDatabaseConnection() {
   });
 
   const { visualOverlayRepository } = require('./services/visual-rag/VisualOverlayRepository');
-  
+
   try {
     // Test basic connectivity
     const isAvailable = await visualOverlayRepository.isAvailable(true);
@@ -1015,41 +1034,37 @@ async function validateDatabaseConnection() {
     }
     console.log('[STARTUP] ✓ Database connection successful');
 
-    // Check pg_vector extension
-    console.log('[STARTUP] Checking pg_vector extension...');
+    // Check pg_vector extension (actually checks Qdrant now)
+    console.log('[STARTUP] Checking vector store...');
     const pgvectorCheck = await visualOverlayRepository.checkPgVectorExtension();
-    
+
     if (!pgvectorCheck.available) {
-      console.error('[STARTUP] ✗ pg_vector extension not available:', pgvectorCheck.error);
-      console.error('[STARTUP] Troubleshooting:');
-      console.error('  1. Verify docker-compose.yml uses pgvector/pgvector:pg16 image');
-      console.error('  2. Check container: docker inspect paperless_db | grep Image');
-      console.error('  3. Install extension: docker exec paperless_db psql -U ' + cfg.postgres.user + ' -d ' + cfg.postgres.database + ' -c "CREATE EXTENSION vector"');
-      throw new Error('pg_vector extension not available');
+      console.warn('[STARTUP] ⚠ Vector store not available:', pgvectorCheck.error);
+      console.warn('[STARTUP] RAG chat features will be disabled');
+      // Don't throw - allow startup without vector store
+      return true;
     }
-    
-    console.log('[STARTUP] ✓ pg_vector extension available (version: ' + pgvectorCheck.version + ')');
+
+    console.log('[STARTUP] ✓ Vector store available (version: ' + pgvectorCheck.version + ')');
 
     // Ensure schema is ready
     console.log('[STARTUP] Ensuring database schema...');
     const schemaReady = await visualOverlayRepository.ensureEnhancedSchema();
-    
+
     if (!schemaReady) {
-      console.error('[STARTUP] ✗ Database schema initialization failed');
-      console.error('[STARTUP] Check logs above for specific error details');
-      throw new Error('Database schema initialization failed');
+      console.warn('[STARTUP] ⚠ Database schema initialization failed');
+      console.warn('[STARTUP] RAG chat features will be disabled');
+      // Don't throw - allow startup without schema
+      return true;
     }
-    
+
     console.log('[STARTUP] ✓ Database schema ready');
     return true;
   } catch (error) {
-    console.error('[STARTUP] ✗ Database validation failed:', error.message);
-    console.error('[STARTUP] Please verify:');
-    console.error('  1. PostgreSQL container is running: docker ps | grep paperless_db');
-    console.error('  2. Environment variables are set in docker-compose.env');
-    console.error('  3. Credentials match between docker-compose.env and PostgreSQL');
-    console.error('  4. Container uses pgvector image: docker inspect paperless_db | grep Image');
-    throw error;
+    console.warn('[STARTUP] ⚠ Database validation failed:', error.message);
+    console.warn('[STARTUP] RAG chat features will be disabled, but AI tagging will work');
+    // Don't throw - allow startup without database
+    return true;
   }
 }
 

@@ -1,0 +1,91 @@
+# Paperless-AI Stack (Lennix Fork)
+#
+# This compose file sets up:
+# - paperless-ai: Main application for AI document tagging
+#
+# Optional (for RAG chat features):
+# - qdrant: Vector database - uncomment if you want semantic search
+#
+# Usage:
+#   docker compose up -d
+#
+# First run:
+#   1. Copy .env.example to .env and configure
+#   2. docker compose up -d
+#   3. Access http://localhost:3000
+
+services:
+  # =============================================================================
+  # Paperless-AI Main Application
+  # =============================================================================
+  paperless-ai:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: paperless-ai:lennix
+    container_name: paperless-ai
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      # Paperless-ngx Connection (REQUIRED - update these!)
+      - PAPERLESS_API_URL=${PAPERLESS_API_URL:-http://your-paperless:8000/api}
+      - PAPERLESS_API_TOKEN=${PAPERLESS_API_TOKEN:-your-token-here}
+
+      # AI Provider Configuration
+      - AI_PROVIDER=${AI_PROVIDER:-ollama}
+      - OLLAMA_API_URL=${OLLAMA_API_URL:-http://host.docker.internal:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen3:4b}
+
+      # Document Processing Settings
+      - SCAN_INTERVAL=${SCAN_INTERVAL:-*/30 * * * *}
+      - ACTIVATE_TAGGING=${ACTIVATE_TAGGING:-yes}
+      - ACTIVATE_CORRESPONDENTS=${ACTIVATE_CORRESPONDENTS:-no}
+      - ACTIVATE_DOCUMENT_TYPE=${ACTIVATE_DOCUMENT_TYPE:-yes}
+      - ACTIVATE_TITLE=${ACTIVATE_TITLE:-yes}
+      - ACTIVATE_CUSTOM_FIELDS=${ACTIVATE_CUSTOM_FIELDS:-no}
+
+      # Restriction Settings (RECOMMENDED)
+      - RESTRICT_TO_EXISTING_TAGS=${RESTRICT_TO_EXISTING_TAGS:-yes}
+      - RESTRICT_TO_EXISTING_CORRESPONDENTS=${RESTRICT_TO_EXISTING_CORRESPONDENTS:-yes}
+      - RESTRICT_TO_EXISTING_DOCUMENT_TYPES=${RESTRICT_TO_EXISTING_DOCUMENT_TYPES:-yes}
+      - USE_EXISTING_DATA=${USE_EXISTING_DATA:-yes}
+
+      # RAG Features (optional - requires Qdrant)
+      - RAG_ENABLED=${RAG_ENABLED:-no}
+      # - QDRANT_URL=http://qdrant:6333
+    volumes:
+      - paperless-ai-data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - paperless-ai-network
+
+  # =============================================================================
+  # Qdrant Vector Database (OPTIONAL - for RAG chat features)
+  # =============================================================================
+  # Uncomment below if you want semantic search / RAG chat features
+  # Also set RAG_ENABLED=yes and uncomment QDRANT_URL above
+  #
+  # qdrant:
+  #   image: qdrant/qdrant:latest
+  #   container_name: paperless-ai-qdrant
+  #   restart: unless-stopped
+  #   volumes:
+  #     - paperless-ai-qdrant:/qdrant/storage
+  #   networks:
+  #     - paperless-ai-network
+
+networks:
+  paperless-ai-network:
+    driver: bridge
+
+volumes:
+  paperless-ai-data:
+    name: paperless-ai-data
+  # paperless-ai-qdrant:
+  #   name: paperless-ai-qdrant

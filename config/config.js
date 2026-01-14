@@ -586,9 +586,11 @@ module.exports = {
   }
 };
 
-// Validate pgvector is available
-if (!process.env.POSTGRES_HOST && !process.env.PAPERLESS_DBHOST) {
-  console.warn('[CONFIG] WARNING: PostgreSQL host not configured. pgvector will not be available.');
+// Validate pgvector is available (only relevant when RAG is enabled)
+if (process.env.RAG_ENABLED === 'yes') {
+  if (!process.env.POSTGRES_HOST && !process.env.PAPERLESS_DBHOST) {
+    console.warn('[CONFIG] WARNING: PostgreSQL host not configured. pgvector will not be available.');
+  }
 }
 
 /**
@@ -620,8 +622,12 @@ function validateDatabaseCredentials() {
   }
 }
 
-// Run validation immediately
-validateDatabaseCredentials();
+// Run validation only if RAG is enabled
+if (process.env.RAG_ENABLED === 'yes') {
+  validateDatabaseCredentials();
+} else {
+  console.log('[CONFIG] RAG_ENABLED=no, skipping database credential validation');
+}
 
 /**
  * Log environment variable resolution for debugging
@@ -648,24 +654,26 @@ function logEnvResolution(canonicalKey, fallbackKeys = []) {
   return { key: canonicalKey, source, value: value ? '******' : '<NOT SET>' };
 }
 
-// Log all database-related environment variables at startup
-console.log('[CONFIG] Environment variable resolution:');
-console.log('  Database User:', logEnvResolution('POSTGRES_USER', ['PAPERLESS_DBUSER']));
-console.log('  Database Password:', logEnvResolution('POSTGRES_PASSWORD', ['PAPERLESS_DBPASS']));
-console.log('  Database Name:', logEnvResolution('POSTGRES_DB', ['PAPERLESS_DBNAME']));
-console.log('  Database Host:', logEnvResolution('POSTGRES_HOST', ['PAPERLESS_DBHOST']));
-console.log('  Database Port:', logEnvResolution('POSTGRES_PORT', ['PAPERLESS_DBPORT']));
+// Log database-related environment variables only when RAG is enabled
+if (process.env.RAG_ENABLED === 'yes') {
+  console.log('[CONFIG] Environment variable resolution:');
+  console.log('  Database User:', logEnvResolution('POSTGRES_USER', ['PAPERLESS_DBUSER']));
+  console.log('  Database Password:', logEnvResolution('POSTGRES_PASSWORD', ['PAPERLESS_DBPASS']));
+  console.log('  Database Name:', logEnvResolution('POSTGRES_DB', ['PAPERLESS_DBNAME']));
+  console.log('  Database Host:', logEnvResolution('POSTGRES_HOST', ['PAPERLESS_DBHOST']));
+  console.log('  Database Port:', logEnvResolution('POSTGRES_PORT', ['PAPERLESS_DBPORT']));
 
-console.log('[CONFIG] Database configuration loaded:', {
-  host: module.exports.postgres.host,
-  port: module.exports.postgres.port,
-  database: module.exports.postgres.database,
-  user: module.exports.postgres.user,
-  password: module.exports.postgres.password ? '******' : '<NOT SET>',
-  source: {
-    user: process.env.POSTGRES_USER ? 'POSTGRES_USER' : 'PAPERLESS_DBUSER',
-    password: process.env.POSTGRES_PASSWORD ? 'POSTGRES_PASSWORD' : 'PAPERLESS_DBPASS',
-    database: process.env.POSTGRES_DB ? 'POSTGRES_DB' : 'PAPERLESS_DBNAME',
-    host: process.env.POSTGRES_HOST ? 'POSTGRES_HOST' : (process.env.PAPERLESS_DBHOST ? 'PAPERLESS_DBHOST' : 'default')
-  }
-});
+  console.log('[CONFIG] Database configuration loaded:', {
+    host: module.exports.postgres.host,
+    port: module.exports.postgres.port,
+    database: module.exports.postgres.database,
+    user: module.exports.postgres.user,
+    password: module.exports.postgres.password ? '******' : '<NOT SET>',
+    source: {
+      user: process.env.POSTGRES_USER ? 'POSTGRES_USER' : 'PAPERLESS_DBUSER',
+      password: process.env.POSTGRES_PASSWORD ? 'POSTGRES_PASSWORD' : 'PAPERLESS_DBPASS',
+      database: process.env.POSTGRES_DB ? 'POSTGRES_DB' : 'PAPERLESS_DBNAME',
+      host: process.env.POSTGRES_HOST ? 'POSTGRES_HOST' : (process.env.PAPERLESS_DBHOST ? 'PAPERLESS_DBHOST' : 'default')
+    }
+  });
+}
