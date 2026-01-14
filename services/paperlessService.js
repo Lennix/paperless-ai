@@ -18,6 +18,76 @@ class PaperlessService {
     this.CACHE_LIFETIME = 3000; // 3 Sekunden
   }
 
+  /**
+   * Validate URL against SSRF attacks
+   * @param {string} url - The URL to validate
+   * @param {Object} options - Validation options
+   * @param {Array<string>} options.allowedHosts - List of allowed hostnames
+   * @param {boolean} options.allowLocalhost - Whether to allow localhost (default: false)
+   * @throws {Error} If URL is not safe
+   */
+  validateUrl(url, options = {}) {
+    const { allowedHosts = [], allowLocalhost = false } = options;
+
+    // Skip validation if explicitly disabled via env
+    if (process.env.DISABLE_URL_VALIDATION === 'yes') {
+      return true;
+    }
+
+    try {
+      const parsed = new URL(url);
+
+      // Block private IP ranges (RFC 1918)
+      const privateIpPatterns = [
+        /^10\./,                              // 10.0.0.0/8
+        /^172\.(1[6-9]|2[0-9]|3[0-1])\./,    // 172.16.0.0/12
+        /^192\.168\./,                        // 192.168.0.0/16
+        /^169\.254\./,                        // Link-local (AWS metadata)
+        /^127\./,                             // Loopback
+        /^0\.0\.0\.0$/,                       // Special
+        /^::1$/,                              // IPv6 loopback
+        /^fe80:/i,                            // IPv6 link-local
+        /^fc00:/i,                            // IPv6 private
+      ];
+
+      const hostname = parsed.hostname.toLowerCase();
+
+      // Check for localhost variants
+      if (!allowLocalhost && (hostname === 'localhost' || hostname === '0.0.0.0')) {
+        throw new Error('Access to localhost is forbidden');
+      }
+
+      // Check private IP patterns
+      for (const pattern of privateIpPatterns) {
+        if (pattern.test(hostname)) {
+          throw new Error(`Access to private IP range is forbidden: ${hostname}`);
+        }
+      }
+
+      // Block cloud metadata endpoints
+      if (hostname === '169.254.169.254') {
+        throw new Error('Access to cloud metadata endpoint is forbidden');
+      }
+
+      // Only allow HTTP and HTTPS protocols
+      if (!['http:', 'https:'].includes(parsed.protocol)) {
+        throw new Error(`Only HTTP(S) protocols are allowed, got: ${parsed.protocol}`);
+      }
+
+      // Allowlist check (if allowlist is configured)
+      if (allowedHosts.length > 0 && !allowedHosts.includes(hostname)) {
+        throw new Error(`Host '${hostname}' is not in the allowlist`);
+      }
+
+      return true;
+    } catch (error) {
+      if (error.message.includes('Invalid URL')) {
+        throw new Error(`Invalid URL format: ${url}`);
+      }
+      throw error;
+    }
+  }
+
   initialize() {
     if (!this.client) {
       let apiUrl = config.paperless.apiUrl;

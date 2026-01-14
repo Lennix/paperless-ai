@@ -3,6 +3,63 @@ const config = require('../config/config');
 const logger = require('./logger');
 
 /**
+ * Validate URL against SSRF attacks
+ * @param {string} url - The URL to validate
+ * @throws {Error} If URL is not safe
+ */
+function validateExternalApiUrl(url) {
+  // Skip validation if explicitly disabled via env
+  if (process.env.DISABLE_EXTERNAL_API_URL_VALIDATION === 'yes') {
+    return true;
+  }
+
+  try {
+    const parsed = new URL(url);
+
+    // Block private IP ranges (RFC 1918)
+    const privateIpPatterns = [
+      /^10\./,                              // 10.0.0.0/8
+      /^172\.(1[6-9]|2[0-9]|3[0-1])\./,    // 172.16.0.0/12
+      /^192\.168\./,                        // 192.168.0.0/16
+      /^169\.254\./,                        // Link-local (AWS metadata)
+      /^127\./,                             // Loopback
+      /^0\.0\.0\.0$/,                       // Special
+    ];
+
+    const hostname = parsed.hostname.toLowerCase();
+
+    // Check for localhost variants
+    if (hostname === 'localhost' || hostname === '0.0.0.0') {
+      throw new Error('External API URL cannot point to localhost');
+    }
+
+    // Check private IP patterns
+    for (const pattern of privateIpPatterns) {
+      if (pattern.test(hostname)) {
+        throw new Error(`External API URL cannot point to private IP range: ${hostname}`);
+      }
+    }
+
+    // Block cloud metadata endpoints
+    if (hostname === '169.254.169.254') {
+      throw new Error('External API URL cannot point to cloud metadata endpoint');
+    }
+
+    // Only allow HTTP and HTTPS protocols
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      throw new Error(`External API URL must use HTTP(S), got: ${parsed.protocol}`);
+    }
+
+    return true;
+  } catch (error) {
+    if (error.message.includes('Invalid URL')) {
+      throw new Error(`Invalid external API URL format: ${url}`);
+    }
+    throw error;
+  }
+}
+
+/**
  * Service for fetching data from external APIs to enrich AI prompts
  */
 class ExternalApiService {
@@ -24,11 +81,19 @@ class ExternalApiService {
         headers = {},
         body = {},
         timeout = 5000,
-        transform
+        transformationTemplate  // Renamed from transform to clarify it's a template, not executable code
       } = config.externalApiConfig;
 
       if (!url) {
         console.error('[ERROR] External API URL not configured');
+        return null;
+      }
+
+      // SEC-001: Validate URL against SSRF attacks
+      try {
+        validateExternalApiUrl(url);
+      } catch (ssrfError) {
+        console.error('[SECURITY] External API URL validation failed:', ssrfError.message);
         return null;
       }
 
@@ -73,15 +138,30 @@ class ExternalApiService {
       const response = await axios(options);
       let data = response.data;
 
-      // Apply transform function if provided
-      if (transform && typeof transform === 'string') {
+      // Apply transformation template if provided (JSON path extraction, not code execution)
+      // SEC-001: Removed new Function() code injection vulnerability
+      // Now uses safe JSON path extraction instead
+      if (transformationTemplate && typeof transformationTemplate === 'string') {
         try {
-          // Create a safe transform function
-          const transformFn = new Function('data', transform);
-          data = transformFn(data);
-          logger.debug('Successfully transformed external API data');
+          // Support simple dot notation paths like "data.results" or "response.items[0]"
+          const pathParts = transformationTemplate.split('.');
+          let result = data;
+          for (const part of pathParts) {
+            // Handle array notation like "items[0]"
+            const arrayMatch = part.match(/^(\w+)\[(\d+)\]$/);
+            if (arrayMatch) {
+              result = result?.[arrayMatch[1]]?.[parseInt(arrayMatch[2])];
+            } else {
+              result = result?.[part];
+            }
+            if (result === undefined) break;
+          }
+          if (result !== undefined) {
+            data = result;
+            logger.debug('Successfully applied transformation template to external API data');
+          }
         } catch (error) {
-          console.error('[ERROR] Failed to execute transform function:', error.message);
+          console.error('[ERROR] Failed to apply transformation template:', error.message);
         }
       }
 
