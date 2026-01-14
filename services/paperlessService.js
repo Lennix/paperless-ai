@@ -1541,22 +1541,33 @@ async searchForExistingDocumentType(documentType) {
   }
 }
 
-async getOrCreateDocumentType(name) {
+async getOrCreateDocumentType(name, options = {}) {
   this.initialize();
-  
+
+  // Check if we should restrict to existing document types
+  const restrictToExisting = options.restrictToExisting === true ||
+                            (options.restrictToExisting === undefined &&
+                             process.env.RESTRICT_TO_EXISTING_DOCUMENT_TYPES === 'yes');
+
   try {
       // Suche nach existierendem document_type
       const existingDocType = await this.searchForExistingDocumentType(name);
       console.log("[DEBUG] Response Document Type Search: ", existingDocType);
-  
+
       if (existingDocType) {
           console.log(`[DEBUG] Found existing document type "${name}" with ID ${existingDocType.id}`);
           return existingDocType;
       }
-  
+
+      // If restricted to existing types and not found, return null
+      if (restrictToExisting) {
+          console.log(`[DEBUG] Document type "${name}" not found and RESTRICT_TO_EXISTING_DOCUMENT_TYPES=yes, skipping creation`);
+          return null;
+      }
+
       // Erstelle neuen document_type
       try {
-          const createResponse = await this.client.post('/document_types/', { 
+          const createResponse = await this.client.post('/document_types/', {
               name: name,
               matching_algorithm: 1, // 1 = ANY
               match: "",  // Optional: Kann später angepasst werden
@@ -1565,18 +1576,18 @@ async getOrCreateDocumentType(name) {
           console.log(`[DEBUG] Created new document type "${name}" with ID ${createResponse.data.id}`);
           return createResponse.data;
       } catch (createError) {
-          if (createError.response?.status === 400 && 
+          if (createError.response?.status === 400 &&
               createError.response?.data?.error?.includes('unique constraint')) {
-            
+
               // Race condition check
               const retryResponse = await this.client.get('/document_types/', {
                   params: { name: name }
               });
-            
+
               const justCreatedDocType = retryResponse.data.results.find(
                   dt => dt.name.toLowerCase() === name.toLowerCase()
               );
-            
+
               if (justCreatedDocType) {
                   console.log(`[DEBUG] Retrieved document type "${name}" after constraint error with ID ${justCreatedDocType.id}`);
                   return justCreatedDocType;
@@ -1744,7 +1755,6 @@ async getOrCreateDocumentType(name) {
         };
       }
 
-<<<<<<< HEAD
       // Handle custom fields update (safe, idempotent)
       if (updateData.custom_fields) {
         logger.debug('Custom fields update detected', { documentId });
