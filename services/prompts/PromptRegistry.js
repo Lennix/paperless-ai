@@ -1061,7 +1061,6 @@ Respond with this exact JSON structure:
         topK: 40,
         topP: 0.9
     }
->>>>>>> efdd603f (feat: add visual signal analyzer for document normalization)
 };
 
 /**
